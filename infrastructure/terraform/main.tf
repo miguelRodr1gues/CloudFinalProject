@@ -45,8 +45,8 @@ module "rds" {
   vpc_id      = module.vpc.vpc_id
   subnet_ids  = module.vpc.private_subnet_ids
   sg_id       = module.vpc.sg_db_id
-  db_password = "nuno2013"
-  db_username = "dbadmin"
+  db_password = var.db_password
+  db_username = var.db_username
 }
 
 module "sqs" {
