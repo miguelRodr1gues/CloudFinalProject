@@ -1,0 +1,80 @@
+terraform {
+  backend "s3" {
+    bucket         = "microservices-project-tf-state-eu-central-1"
+    key            = "envs/dev/terraform.tfstate"
+    region         = "eu-central-1"
+    dynamodb_table = "microservices-project-tf-locks"
+    encrypt        = true
+  }
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
+provider "aws" {
+  region = "eu-central-1"
+}
+
+module "vpc" {
+  source = "./modules/vpc"
+
+  project     = "microservices-project"
+  environment = "dev"
+}
+
+module "ec2" {
+  source = "./modules/ec2"
+
+  project     = "microservices-project"
+  environment = "dev"
+  vpc_id      = module.vpc.vpc_id
+  subnet_id   = module.vpc.public_subnet_ids[0]
+  sg_id       = module.vpc.sg_web_id
+  key_name    = "microservices-project-dev-key"
+}
+
+module "rds" {
+  source = "./modules/rds"
+
+  project     = "microservices-project"
+  environment = "dev"
+  vpc_id      = module.vpc.vpc_id
+  subnet_ids  = module.vpc.private_subnet_ids
+  sg_id       = module.vpc.sg_db_id
+  db_password = "nuno2013"
+  db_username = "dbadmin"
+}
+
+module "sqs" {
+  source = "./modules/sqs"
+
+  project     = "microservices-project"
+  environment = "dev"
+  queue_name  = "order-created"
+}
+
+
+
+
+
+
+
+
+output "db_endpoint" {
+  description = "Endpoint do RDS"
+  value       = module.rds.db_endpoint
+}
+
+output "sqs_queue_url" {
+  description = "URL da fila SQS"
+  value       = module.sqs.queue_url
+}
+
+output "elastic_ip" {
+  description = "IP público fixo da EC2"
+  value       = module.ec2.elastic_ip
+}

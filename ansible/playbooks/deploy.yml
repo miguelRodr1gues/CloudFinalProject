@@ -1,0 +1,114 @@
+---
+- name: Deploy microservices
+  hosts: ec2
+  become: true
+
+  tasks:
+    # Docker
+    - name: Install Docker
+      dnf:
+        name: docker
+        state: present
+
+    - name: Start and enable Docker service
+      service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Add ec2-user to docker group
+      user:
+        name: ec2-user
+        groups: docker
+        append: true
+
+    - name: Create Docker CLI plugins directory
+      file:
+        path: /usr/local/lib/docker/cli-plugins
+        state: directory
+        mode: '0755'
+
+    - name: Install Docker Compose plugin
+      get_url:
+        url: https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64
+        dest: /usr/local/lib/docker/cli-plugins/docker-compose
+        mode: '0755'
+      become: true
+
+
+
+
+
+
+
+
+    # PostgreSQL
+    - name: Install PostgreSQL client
+      dnf:
+        name: postgresql15
+        state: present
+
+
+
+
+
+
+
+
+    # Criar diretorio para as apps
+    - name: Create app directory
+      file:
+        path: /app
+        state: directory
+        owner: ec2-user
+        mode: '0755'
+
+
+
+
+
+
+
+
+    # Copia o docker-compose.yml e o .env para a EC2
+    # Remove imagens antigas, faz pull das novas e recria os containers
+    - name: Copy docker-compose.yml
+      copy:
+        src: ../../docker-compose.yml
+        dest: /app/docker-compose.yml
+        owner: ec2-user
+
+    - name: Create .env file
+      copy:
+        dest: /app/.env
+        content: |
+          DOCKERHUB_USERNAME={{ dockerhub_username }}
+          DB_HOST={{ db_host }}
+          DB_USERNAME={{ db_username }}
+          DB_PASSWORD={{ db_password }}
+          SQS_QUEUE_URL={{ sqs_queue_url }}
+        owner: ec2-user
+        mode: '0600'
+
+    - name: Stop and remove containers and volumes
+      community.docker.docker_compose_v2:
+        project_src: /app
+        state: absent
+        remove_volumes: true
+      ignore_errors: true
+
+    - name: Remove old images
+      community.docker.docker_prune:
+        images: true
+        images_filters:
+          dangling: false
+
+    - name: Pull latest images
+      community.docker.docker_compose_v2_pull:
+        project_src: /app
+
+    - name: Deploy with docker compose
+      community.docker.docker_compose_v2:
+        project_src: /app
+        state: present
+        recreate: always

@@ -1,0 +1,131 @@
+version: '3.8'
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-log:/var/lib/zookeeper/log
+    networks:
+      - microservices-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: [ "CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092" ]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    networks:
+      - microservices-network
+
+  user-service:
+    image: ${DOCKERHUB_USERNAME}/user-service:latest
+    ports:
+      - "8081:8081"
+    deploy:
+      resources:
+        limits:
+          memory: 500M
+    environment:
+      - JAVA_OPTS=-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://${DB_HOST}:5432/microservices
+      - SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.postgresql.Driver
+      - SPRING_DATASOURCE_USERNAME=${DB_USERNAME}
+      - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD}
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+      - SPRING_JPA_DATABASE_PLATFORM=org.hibernate.dialect.PostgreSQLDialect
+    networks:
+      - microservices-network
+
+  product-service:
+    image: ${DOCKERHUB_USERNAME}/product-service:latest
+    ports:
+      - "8082:8082"
+    deploy:
+      resources:
+        limits:
+          memory: 500M
+    environment:
+      - JAVA_OPTS=-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - SPRING_KAFKA_LISTENER_AUTO_STARTUP=true
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://${DB_HOST}:5432/microservices
+      - SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.postgresql.Driver
+      - SPRING_DATASOURCE_USERNAME=${DB_USERNAME}
+      - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD}
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+      - SPRING_JPA_DATABASE_PLATFORM=org.hibernate.dialect.PostgreSQLDialect
+      - CLOUD_SQS_PRODUCT_EVENTS_ENABLED=true
+      - CLOUD_SQS_PRODUCT_EVENTS_QUEUE_URL=${SQS_QUEUE_URL}
+      - CLOUD_SQS_PRODUCT_EVENTS_REGION=eu-central-1
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - microservices-network
+
+  order-service:
+    image: ${DOCKERHUB_USERNAME}/order-service:latest
+    ports:
+      - "8083:8083"
+    deploy:
+      resources:
+        limits:
+          memory: 500M
+    environment:
+      - JAVA_OPTS=-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://${DB_HOST}:5432/microservices
+      - SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.postgresql.Driver
+      - SPRING_DATASOURCE_USERNAME=${DB_USERNAME}
+      - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD}
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+      - SPRING_JPA_DATABASE_PLATFORM=org.hibernate.dialect.PostgreSQLDialect
+      - SERVICES_USER_URL=http://user-service:8081
+      - SERVICES_PRODUCT_URL=http://product-service:8082
+      - CLOUD_SQS_PRODUCT_EVENTS_CONSUMER_ENABLED=true
+      - CLOUD_SQS_PRODUCT_EVENTS_CONSUMER_QUEUE_URL=${SQS_QUEUE_URL}
+      - CLOUD_SQS_PRODUCT_EVENTS_CONSUMER_REGION=eu-central-1
+    depends_on:
+      - kafka
+      - user-service
+      - product-service
+    networks:
+      - microservices-network
+
+  api-gateway:
+    image: ${DOCKERHUB_USERNAME}/api-gateway:latest
+    ports:
+      - "8080:8080"
+    deploy:
+      resources:
+        limits:
+          memory: 500M
+    depends_on:
+      - user-service
+      - product-service
+      - order-service
+    networks:
+      - microservices-network
+
+volumes:
+  zookeeper-data:
+  zookeeper-log:
+  kafka-data:
+
+networks:
+  microservices-network:
+    driver: bridge
