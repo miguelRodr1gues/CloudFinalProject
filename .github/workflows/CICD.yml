@@ -24,12 +24,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-
-
-
-
-
-
+  # Run tests for each microservice in parallel
 
   test:
     runs-on: ubuntu-latest
@@ -60,13 +55,7 @@ jobs:
           cd services/${{ matrix.service }}
           mvn test -B -e 2>&1 | tail -100
 
-
-
-
-
-
-
-
+  # Terraform job to provision infrastructure and get outputs for deployment
 
   terraform:
     runs-on: ubuntu-latest
@@ -115,12 +104,7 @@ jobs:
           echo "sqs_url=$(terraform -chdir=infrastructure/terraform output -raw sqs_queue_url)" >> $GITHUB_OUTPUT
           echo "elastic_ip=$(terraform -chdir=infrastructure/terraform output -raw elastic_ip)" >> $GITHUB_OUTPUT
 
-
-
-
-
-
-
+  # Build and push Docker images for each microservice
 
   build:
     runs-on: ubuntu-latest
@@ -161,15 +145,7 @@ jobs:
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.service }}:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.service }}:${{ github.sha }}
           
-          
-            
-            
-            
-            
-            
-            
-            
-            
+  # Deploy the microservices to the EC2 instance using Ansible
 
   deploy:
     runs-on: ubuntu-latest
